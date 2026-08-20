@@ -1,0 +1,1012 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EOC Console - Shared Progress</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+
+<!-- Firebase SDK -->
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
+
+<style>
+  :root{
+    --bg:#0B0E14;
+    --panel:#141922;
+    --panel-raised:#1B222E;
+    --line:#262F3D;
+    --line-soft:#1E2632;
+    --text:#E7ECF3;
+    --text-dim:#8A97AC;
+    --text-faint:#5A6478;
+    --accent:#4FA3D1;
+    --accent-dim:#2E5A73;
+    --amber:#E0A526;
+    --green:#3FB88A;
+    --green-dim:#1E4A3B;
+    --red:#E05C4F;
+    --red-dim:#4A2622;
+    --mono:'IBM Plex Mono', monospace;
+    --sans:'IBM Plex Sans', sans-serif;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:var(--sans);}
+  body{min-height:100vh;-webkit-font-smoothing:antialiased;}
+  ::selection{background:var(--accent-dim);}
+
+  a{color:var(--accent);}
+
+  .topbar{
+    position:sticky; top:0; z-index:50;
+    background:rgba(11,14,20,0.92);
+    backdrop-filter:blur(10px);
+    border-bottom:1px solid var(--line);
+  }
+  .topbar-inner{
+    max-width:1180px; margin:0 auto; padding:14px 20px 0 20px;
+  }
+  .brand-row{
+    display:flex; align-items:baseline; justify-content:space-between; gap:16px;
+    margin-bottom:12px;
+    flex-wrap:wrap;
+  }
+  .brand{
+    display:flex; align-items:baseline; gap:10px;
+  }
+  .brand-mark{
+    font-family:var(--mono); font-size:12px; font-weight:600; letter-spacing:0.08em;
+    color:var(--bg); background:var(--accent);
+    padding:3px 7px; border-radius:4px;
+  }
+  .brand-name{
+    font-size:15px; font-weight:600; letter-spacing:0.01em;
+  }
+  .brand-sub{
+    font-family:var(--mono); font-size:11px; color:var(--text-faint);
+  }
+  .header-actions{
+    display:flex; align-items:center; gap:10px;
+  }
+  .date-pill{
+    font-family:var(--mono); font-size:11px; color:var(--text-dim);
+    border:1px solid var(--line); border-radius:20px; padding:5px 11px;
+  }
+  .reset-btn{
+    font-family:var(--sans); font-size:12px; color:var(--text-dim);
+    background:transparent; border:1px solid var(--line); border-radius:6px;
+    padding:6px 10px; cursor:pointer; transition:border-color .15s, color .15s;
+  }
+  .reset-btn:hover{border-color:var(--red); color:var(--red);}
+  
+  .sync-status{
+    font-family:var(--mono); font-size:10px;
+    color:var(--green); padding:4px 10px;
+    border:1px solid var(--green-dim); border-radius:12px;
+    display:flex; align-items:center; gap:6px;
+  }
+  .sync-status .dot{
+    width:6px; height:6px; border-radius:50%;
+    background:var(--green);
+    display:inline-block;
+    animation:pulse 2s infinite;
+  }
+  @keyframes pulse{
+    0%,100%{opacity:1;}
+    50%{opacity:0.3;}
+  }
+  .sync-status.offline .dot{background:var(--red); animation:none;}
+
+  .overall-progress{
+    display:flex; align-items:center; gap:10px; margin-bottom:0;
+  }
+  .overall-track{
+    flex:1; height:3px; background:var(--line-soft); border-radius:2px; overflow:hidden;
+  }
+  .overall-fill{
+    height:100%; background:linear-gradient(90deg, var(--accent), var(--green));
+    border-radius:2px; transition:width .35s ease;
+  }
+  .overall-label{
+    font-family:var(--mono); font-size:11px; color:var(--text-dim); white-space:nowrap;
+  }
+
+  .tabs{
+    display:flex; gap:2px; margin-top:14px;
+    overflow-x:auto; scrollbar-width:none;
+  }
+  .tabs::-webkit-scrollbar{display:none;}
+  .tab{
+    position:relative;
+    flex:1; min-width:150px;
+    background:transparent; border:none; cursor:pointer;
+    padding:10px 12px 12px 12px;
+    font-family:var(--sans); color:var(--text-dim);
+    text-align:left;
+    border-bottom:2px solid transparent;
+    transition:color .15s;
+  }
+  .tab:hover{color:var(--text);}
+  .tab.active{color:var(--text); border-bottom-color:var(--accent);}
+  .tab-eyebrow{
+    font-family:var(--mono); font-size:10px; letter-spacing:0.1em; color:var(--text-faint);
+    display:block; margin-bottom:3px;
+  }
+  .tab.active .tab-eyebrow{color:var(--accent);}
+  .tab-title{
+    font-size:13px; font-weight:600; display:block; margin-bottom:6px;
+  }
+  .tab-bar{
+    height:3px; background:var(--line-soft); border-radius:2px; overflow:hidden;
+  }
+  .tab-bar-fill{
+    height:100%; border-radius:2px; transition:width .35s ease;
+    background:var(--text-faint);
+  }
+  .tab.active .tab-bar-fill{background:var(--accent);}
+  .tab-bar-fill.complete{background:var(--green) !important;}
+
+  main{max-width:1180px; margin:0 auto; padding:26px 20px 90px 20px;}
+  .side-panel{display:none;}
+  .side-panel.active{display:block; animation:fadein .25s ease;}
+  @keyframes fadein{from{opacity:0; transform:translateY(4px);} to{opacity:1; transform:translateY(0);}}
+
+  .side-head{margin-bottom:22px;}
+  .side-head h1{
+    font-size:20px; margin:0 0 6px 0; font-weight:600; letter-spacing:-0.01em;
+  }
+  .side-head p{margin:0; color:var(--text-dim); font-size:13px; line-height:1.5; max-width:640px;}
+
+  .section{
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:10px;
+    margin-bottom:14px;
+    overflow:hidden;
+  }
+  .section-head{
+    display:flex; align-items:center; gap:12px;
+    padding:14px 16px;
+    cursor:pointer; user-select:none;
+  }
+  .section-check{
+    flex:0 0 auto;
+    width:20px; height:20px; border-radius:5px;
+    border:1.5px solid var(--line);
+    display:flex; align-items:center; justify-content:center;
+    transition:background .15s, border-color .15s;
+  }
+  .section.done .section-check{background:var(--green); border-color:var(--green);}
+  .section-check svg{width:12px; height:12px; opacity:0; transition:opacity .15s;}
+  .section.done .section-check svg{opacity:1;}
+  .section-title-wrap{flex:1; min-width:0;}
+  .section-title{font-size:14px; font-weight:600; margin:0;}
+  .section.done .section-title{color:var(--text-dim); text-decoration:line-through; text-decoration-color:var(--line);}
+  .section-meta{font-family:var(--mono); font-size:10.5px; color:var(--text-faint); margin-top:2px;}
+  .section-caret{
+    color:var(--text-faint); transition:transform .2s;
+    flex:0 0 auto;
+  }
+  .section.open .section-caret{transform:rotate(90deg);}
+  .section-warn-badge{
+    font-family:var(--mono); font-size:9.5px; letter-spacing:0.05em;
+    color:var(--amber); border:1px solid var(--amber); border-radius:4px;
+    padding:2px 6px; flex:0 0 auto;
+  }
+
+  .section-body{
+    display:none;
+    border-top:1px solid transparent;
+  }
+  .section.open .section-body{display:block; border-top:1px solid var(--line);}
+  .section-body-inner{padding:14px 16px 18px 16px;}
+
+  .step{
+    display:flex; align-items:flex-start; gap:10px;
+    padding:9px 0;
+    border-bottom:1px solid var(--line-soft);
+  }
+  .step:last-child{border-bottom:none;}
+  .step-check{
+    flex:0 0 auto; margin-top:1px;
+    width:17px; height:17px; border-radius:4px;
+    border:1.5px solid var(--line);
+    display:flex; align-items:center; justify-content:center;
+    cursor:pointer; transition:background .15s, border-color .15s;
+  }
+  .step.done .step-check{background:var(--accent); border-color:var(--accent);}
+  .step-check svg{width:10px; height:10px; opacity:0; transition:opacity .15s;}
+  .step.done .step-check svg{opacity:1;}
+  .step-text{flex:1; min-width:0;}
+  .step-label{font-size:13px; line-height:1.5; cursor:pointer;}
+  .step.done .step-label{color:var(--text-dim); text-decoration:line-through; text-decoration-color:var(--line-soft);}
+  .step-note{font-size:12px; color:var(--text-dim); margin-top:3px; line-height:1.5;}
+
+  code, .code, .cmd{
+    font-family:var(--mono); font-size:12px;
+    background:var(--panel-raised); color:var(--accent);
+    padding:1px 6px; border-radius:4px; border:1px solid var(--line);
+  }
+  .codeblock{
+    font-family:var(--mono); font-size:12px; color:#B9C4D6;
+    background:#0E1219; border:1px solid var(--line);
+    border-radius:7px; padding:10px 12px; margin:8px 0 4px 0;
+    white-space:pre-wrap; word-break:break-word; line-height:1.6;
+  }
+  .codeblock .kw{color:var(--accent);}
+  .codeblock .str{color:var(--green);}
+  .codeblock .cm{color:var(--text-faint);}
+
+  .warn-box{
+    display:flex; gap:10px; align-items:flex-start;
+    background:var(--red-dim); border:1px solid #6b3630;
+    border-radius:7px; padding:10px 12px; margin-top:10px;
+    font-size:12.5px; color:#F0B3AC; line-height:1.5;
+  }
+  .warn-box svg{flex:0 0 auto; margin-top:2px; width:14px; height:14px;}
+
+  .branch-toolbar{
+    display:flex; align-items:center; justify-content:space-between; gap:12px;
+    margin-bottom:14px; flex-wrap:wrap;
+  }
+  .branch-stats{
+    font-family:var(--mono); font-size:12px; color:var(--text-dim);
+  }
+  .branch-stats b{color:var(--text);}
+
+  .branch-grid{
+    display:grid; grid-template-columns:repeat(auto-fill, minmax(96px, 1fr));
+    gap:8px; margin-bottom:24px;
+  }
+  .branch-tile{
+    background:var(--panel); border:1.5px solid var(--line); border-radius:8px;
+    padding:10px 8px; cursor:pointer; text-align:left;
+    transition:border-color .15s, background .15s;
+    position:relative;
+  }
+  .branch-tile:hover{border-color:var(--text-faint);}
+  .branch-tile.called{border-color:var(--amber); background:rgba(224,165,38,0.07);}
+  .branch-tile.cleared{border-color:var(--green); background:rgba(63,184,138,0.08);}
+  .branch-code{
+    font-family:var(--mono); font-size:14px; font-weight:600; color:var(--text);
+  }
+  .branch-tile.cleared .branch-code{color:var(--green);}
+  .branch-tile.called .branch-code{color:var(--amber);}
+  .branch-state{
+    font-family:var(--mono); font-size:9px; letter-spacing:0.04em;
+    color:var(--text-faint); margin-top:3px; text-transform:uppercase;
+  }
+  .branch-tile.called .branch-state{color:var(--amber);}
+  .branch-tile.cleared .branch-state{color:var(--green);}
+  .twin-dot{
+    position:absolute; top:6px; right:6px;
+    width:5px; height:5px; border-radius:50%; background:var(--accent);
+  }
+
+  .modal-backdrop{
+    display:none; position:fixed; inset:0; background:rgba(6,8,12,0.7);
+    z-index:100; align-items:center; justify-content:center; padding:20px;
+    backdrop-filter:blur(2px);
+  }
+  .modal-backdrop.open{display:flex;}
+  .modal{
+    background:var(--panel-raised); border:1px solid var(--line); border-radius:12px;
+    width:100%; max-width:420px; padding:20px;
+  }
+  .modal-head{display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:4px;}
+  .modal-code{font-family:var(--mono); font-size:20px; font-weight:600;}
+  .modal-twin{font-family:var(--mono); font-size:11px; color:var(--accent); margin-bottom:14px;}
+  .modal-item{
+    display:flex; align-items:center; gap:10px; padding:8px 0;
+    border-bottom:1px solid var(--line-soft);
+  }
+  .modal-item:last-of-type{border-bottom:none;}
+  .modal-item label{font-size:13px; flex:1; cursor:pointer;}
+  .modal-item input[type=checkbox]{width:16px;height:16px; accent-color:var(--accent);}
+  .modal-close{
+    margin-top:16px; width:100%; padding:10px; border-radius:7px;
+    background:var(--accent); color:#08131a; border:none; font-weight:600;
+    font-family:var(--sans); font-size:13px; cursor:pointer;
+  }
+  .modal-close:hover{opacity:0.9;}
+
+  .side-nav{
+    display:flex; justify-content:space-between; margin-top:26px;
+  }
+  .nav-btn{
+    font-family:var(--sans); font-size:12.5px; color:var(--text-dim);
+    background:var(--panel); border:1px solid var(--line); border-radius:7px;
+    padding:9px 14px; cursor:pointer; display:flex; align-items:center; gap:6px;
+  }
+  .nav-btn:hover{color:var(--text); border-color:var(--text-faint);}
+  .nav-btn.primary{background:var(--accent); color:#08131a; border-color:var(--accent); font-weight:600;}
+  .nav-btn.primary:hover{opacity:0.9;}
+  .nav-btn:disabled{opacity:0.35; cursor:not-allowed;}
+
+  .user-badge{
+    font-size:11px; color:var(--text-dim);
+    background:var(--panel-raised);
+    padding:4px 10px; border-radius:12px;
+    border:1px solid var(--line);
+  }
+
+  @media (max-width:640px){
+    .tabs{margin-top:12px;}
+    .tab{min-width:130px; padding:8px 8px 10px 8px;}
+    .tab-title{font-size:12px;}
+    main{padding:18px 14px 70px 14px;}
+    .branch-grid{grid-template-columns:repeat(auto-fill, minmax(80px, 1fr));}
+    .brand-row{flex-direction:column; align-items:stretch;}
+  }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="topbar-inner">
+    <div class="brand-row">
+      <div class="brand">
+        <span class="brand-mark">EOC</span>
+        <span class="brand-name">End-of-Cycle Console</span>
+        <span class="brand-sub">Shared Progress</span>
+      </div>
+      <div class="header-actions">
+        <span class="user-badge" id="user-badge">👤 User</span>
+        <span class="sync-status" id="sync-status">
+          <span class="dot"></span> Live
+        </span>
+        <span class="date-pill" id="today-pill">—</span>
+        <button class="reset-btn" id="reset-btn">Reset All</button>
+      </div>
+    </div>
+    <div class="overall-progress">
+      <div class="overall-track"><div class="overall-fill" id="overall-fill" style="width:0%"></div></div>
+      <span class="overall-label" id="overall-label">0%</span>
+    </div>
+    <div class="tabs" id="tabs"></div>
+  </div>
+</div>
+
+<main id="main"></main>
+
+<div class="modal-backdrop" id="modal-backdrop">
+  <div class="modal">
+    <div class="modal-head">
+      <span class="modal-code" id="modal-code">031</span>
+      <span class="user-badge" id="modal-user">👤</span>
+    </div>
+    <div class="modal-twin" id="modal-twin"></div>
+    <div class="modal-item">
+      <input type="checkbox" id="modal-called">
+      <label for="modal-called">Branch has called for clearance</label>
+    </div>
+    <div class="modal-item">
+      <input type="checkbox" id="modal-cleared">
+      <label for="modal-cleared">Cleared — Pending Transactions, Pending PC Transactions, CPU pending, Balance Check all checked</label>
+    </div>
+    <button class="modal-close" id="modal-close">Done</button>
+  </div>
+</div>
+
+<script>
+(function(){
+
+  // ============================================================
+  //  FIREBASE CONFIGURATION
+  // ============================================================
+  const firebaseConfig = {
+    apiKey: "AIzaSyDb9n9LNXQxxoN4Lqf4qutCG7loD0oEVItg",
+    authDomain: "eoc-console.firebaseapp.com",
+    databaseURL: "https://eoc-console-default-rtdb.firebaseio.com",
+    projectId: "eoc-console",
+    storageBucket: "eoc-console.firebasestorage.app",
+    messagingSenderId: "34490834155",
+    appId: "1:34490834155:web:149b7586a46f9d0a2e72ae"
+  };
+
+  try {
+    firebase.initializeApp(firebaseConfig);
+    console.log('🔥 Firebase initialized!');
+  } catch(e) {
+    console.warn('⚠️ Firebase init error:', e.message);
+  }
+  const db = firebase.database();
+  const stateRef = db.ref('eocState');
+
+  // ============================================================
+  //  STATE - SHARED DATA
+  // ============================================================
+  const TWIN_PAIRS = [['015','030'],['009','029'],['014','024']];
+  const TWIN_MAP = {};
+  TWIN_PAIRS.forEach(([a,b])=>{ TWIN_MAP[a]=b; TWIN_MAP[b]=a; });
+
+  function pad(n){ return String(n).padStart(3,'0'); }
+  const BRANCHES = Array.from({length:47}, (_,i)=> pad(i+1));
+
+  function getDefaultState(){
+    const branches = {};
+    BRANCHES.forEach(b=>{ branches[b] = {called:false, cleared:false}; });
+    return { steps:{}, branches };
+  }
+
+  let state = getDefaultState();
+  let isSyncing = false;
+  let isConnected = false;
+  
+  // UI-only state (not synced)
+  let uiState = {
+    activeTab: parseInt(localStorage.getItem('eoc-activeTab')) || 0,
+    openSections: JSON.parse(localStorage.getItem('eoc-openSections') || '{}')
+  };
+
+  // ============================================================
+  //  USER ID (just for display)
+  // ============================================================
+  let userId = localStorage.getItem('eoc-user-id');
+  if(!userId){
+    const names = ['Alice', 'Bob', 'Charlie', 'Diana', 'Eve'];
+    userId = names[Math.floor(Math.random() * names.length)];
+    localStorage.setItem('eoc-user-id', userId);
+  }
+  document.getElementById('user-badge').textContent = '👤 ' + userId;
+
+  // ============================================================
+  //  FIREBASE SYNC - SHARED DATA ONLY
+  // ============================================================
+  function saveStateToFirebase(){
+    if(isSyncing) return;
+    stateRef.set(state).catch(err => {
+      console.warn('⚠️ Firebase save error:', err);
+      updateSyncStatus(false);
+    });
+  }
+
+  stateRef.on('value', snapshot => {
+    const data = snapshot.val();
+    if(!data) {
+      stateRef.set(getDefaultState());
+      return;
+    }
+    
+    isSyncing = true;
+    state.steps = data.steps || {};
+    state.branches = data.branches || {};
+    if(!state.branches || Object.keys(state.branches).length === 0) {
+      state.branches = getDefaultState().branches;
+    }
+    BRANCHES.forEach(b=>{
+      if(!state.branches[b]) state.branches[b] = {called:false, cleared:false};
+    });
+    
+    isSyncing = false;
+    updateSyncStatus(true);
+    render();
+  }, error => {
+    console.warn('⚠️ Firebase listener error:', error);
+    updateSyncStatus(false);
+  });
+
+  function saveState(){
+    saveStateToFirebase();
+  }
+
+  function updateSyncStatus(connected){
+    isConnected = connected;
+    const el = document.getElementById('sync-status');
+    if(connected) {
+      el.className = 'sync-status';
+      el.innerHTML = '<span class="dot"></span> Live';
+    } else {
+      el.className = 'sync-status offline';
+      el.innerHTML = '<span class="dot"></span> Offline';
+    }
+  }
+
+  // ============================================================
+  //  CONTENT MODEL
+  // ============================================================
+  const SIDES = [
+    {
+      key:'side1', eyebrow:'SIDE 1', title:'Parfiles & Branch Clearance',
+      blurb:'Modify parfiles across all three databases, then clear all 47 branches as they call in.',
+      sections:[
+        {
+          id:'parfiles', title:'Change parfiles — all databases', meta:'PRODDB3 · PRODDB8 · REPORTSDB',
+          steps:[
+            {id:'pf-proddb3', label:'PRODDB3 — edit preeod_schemas_expdp.par', note:'ssh oracle@10.172.2.226 → cd /home/oracle/scripts → . oraenv (SID: PRODDB3) → vi preeod_schemas_expdp.par'},
+            {id:'pf-proddb8', label:'PRODDB8 — edit posteofi_schemas_expdp.par', note:'ssh oracle@10.170.2.226 → cd /home/oracle/scripts/max → . oraenv (SID: PRODDB8) → vi posteofi_schemas_expdp.par'},
+            {id:'pf-reportsdb', label:'REPORTSDB — edit posteofi_impdp_live.par', note:'ssh oracle@10.170.2.6 → cd /home/oracle/scripts → . oraenv (SID: REPORTSDB) → vi posteofi_impdp_live.par'},
+          ]
+        },
+        {
+          id:'branch-clear', title:'Clear all 47 branches', meta:'Grid below — tap a tile to log a call and clear it', custom:'branch-grid'
+        },
+        {
+          id:'pre-eod-check', title:'Pre-EOD checks', meta:'Pending Transactions must equal 77',
+          warn:'Pending Transactions.txt must show exactly 77 items.',
+          steps:[
+            {id:'chk-balances', label:'Branch balances are zero'},
+            {id:'chk-pc-empty', label:'Pending Pc Transactions.txt is empty'},
+            {id:'chk-discard', label:'Delete workflows using DISCARD PENDING TRANSACTIONS'},
+            {id:'chk-77', label:'Pending Transactions.txt has exactly 77 items'},
+          ]
+        },
+      ]
+    },
+    {
+      key:'db1', eyebrow:'SIDE 1', title:'Databases — Break Sequence',
+      blurb:'Shut down and re-point standby, then take PREEOD backups.',
+      sections:[
+        {
+          id:'break-proddb3', title:'PRODDB3', meta:'Shutdown → standby → PREEOD backup',
+          steps:[
+            {id:'db3-shutdown', label:'Run @1_shutdown', code:'@1_shutdown'},
+            {id:'db3-standby', label:'Run @2_standby', code:'@2_standby'},
+            {id:'db3-backup', label:'Take PREEOD backup', code:'expdp parfile=preeod_schemas_expdp.par'},
+          ]
+        },
+        {
+          id:'break-proddb8', title:'PRODDB8', meta:'Apply',
+          steps:[
+            {id:'db8-apply', label:'Run @apply', code:'@apply'},
+          ]
+        },
+        {
+          id:'break-reportsdb', title:'REPORTSDB', meta:'Truncate',
+          steps:[
+            {id:'rdb-truncate', label:'Run @truncatee', code:'@truncatee'},
+          ]
+        },
+      ]
+    },
+    {
+      key:'side2', eyebrow:'SIDE 2', title:'EODM & Flexcube',
+      blurb:'Run end-of-day marking for every branch, confirm dates rolled forward, then validate trial balance.',
+      sections:[
+        {
+          id:'run-eodm', title:'Run EODM for all branches', meta:'Flexcube — FCJLive',
+          steps:[
+            {id:'eodm-login', label:'Log in to Flexcube', note:'http://flexcube/FCJLive/LoginServlet'},
+            {id:'eodm-run', label:'Run EODM for all branches'},
+            {id:'eodm-confirm', label:'Confirm all branches rolled to next working day', code:"SELECT BRANCH_CODE, BRANCH_NAME, CURRENTPOSTINGDATE, NEXTPOSTINGDATE\nFROM fbtm_branch_info;"},
+          ]
+        },
+        {
+          id:'mark-f', title:'Submit branch marking to F', meta:'All 47 branches',
+          steps:[
+            {id:'markf-submit', label:'Submit all branches marking to F'},
+            {id:'markf-confirm', label:'Confirm all branches are marked F', code:"SELECT * FROM aetb_eoc_branches\nWHERE eoc_status IN ('W','A');", note:'No rows returned = all branches have moved past Waiting/Active.'},
+          ]
+        },
+        {
+          id:'trial-balance', title:'Trial balance — confirm all zero', meta:'All 47 branches',
+          steps:[
+            {id:'tb-run', label:'Run trial balance check for all branches', code:"SELECT BRANCH_CODE, NVL(SUM(NVL(cr_bal_lcy,0)-NVL(dr_bal_lcy,0)),0)\nFROM gltbs_gl_bal\nWHERE leaf='Y'\n  AND (category IN ('1','2') OR (category IN ('3','4') AND ccy_code='GHS'))\n  AND period_code='M08' AND fin_year='FY2026'\nGROUP BY BRANCH_CODE\nORDER BY BRANCH_CODE;"},
+            {id:'tb-confirm', label:'Confirm every branch total is 0'},
+          ]
+        },
+        {
+          id:'live-vs-proddb8', title:'Cross-check live balances vs PRODDB8', meta:'All branches must match',
+          steps:[
+            {id:'live-check', label:'Confirm live database balances match PRODDB8 for all branches'},
+          ]
+        },
+      ]
+    },
+    {
+      key:'db2', eyebrow:'SIDE 3', title:'Databases — Post-EOFI',
+      blurb:'Second database pass, PRODDB8 only: shut down, re-point standby, and take POSTEOFI backups.',
+      sections:[
+        {
+          id:'posteofi-proddb8', title:'PRODDB8', meta:'Shutdown → standby → POSTEOFI backup',
+          steps:[
+            {id:'db8b-shutdown', label:'Run @1_shutdown', code:'@1_shutdown'},
+            {id:'db8b-standby', label:'Run @2_standby', code:'@2_standby'},
+            {id:'db8b-backup', label:'Take POSTEOFI backup', code:'expdp parfile=posteofi_schemas_expdp.par'},
+          ]
+        },
+      ]
+    },
+    {
+      key:'side4', eyebrow:'SIDE 4', title:'Flexcube, Reports & Backups',
+      blurb:'Mark every branch to N, ship POSTEOFI backups to REPORTSDB and start reports.',
+      sections:[
+        {
+          id:'mark-n', title:'Mark all 47 branches to N', meta:'Flexcube',
+          steps:[
+            {id:'markn-submit', label:'Mark all branches to N'},
+            {id:'markn-confirm', label:'Confirm all branches are at N'},
+          ]
+        },
+        {
+          id:'reports', title:'Reports', meta:'REPORTSDB',
+          steps:[
+            {id:'rep-ship', label:'Ship POSTEOFI backups to REPORTSDB'},
+            {id:'rep-start', label:'Start the reports procedure on REPORTSDB'},
+          ]
+        },
+        {
+          id:'backups', title:'Backups — Samba DR', meta:'Both backup sets',
+          steps:[
+            {id:'bkp-preeod', label:'Ship PREEOD backups to Samba DR'},
+            {id:'bkp-posteofi', label:'Ship POSTEOFI backups to Samba DR'},
+          ]
+        },
+      ]
+    },
+  ];
+
+  // ============================================================
+  //  HELPERS
+  // ============================================================
+  const CHECK_SVG = '<svg viewBox="0 0 16 16" fill="none"><path d="M3 8.5L6.5 12L13 4.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
+  function isStepDone(id){ return !!state.steps[id]; }
+  function toggleStep(id){ 
+    state.steps[id] = !state.steps[id]; 
+    saveState(); 
+  }
+
+  function sectionSteps(section){
+    if(section.custom === 'branch-grid'){
+      return BRANCHES.map(b => ({id:'branch-'+b}));
+    }
+    return section.steps || [];
+  }
+  function sectionDone(section){
+    const steps = sectionSteps(section);
+    if(steps.length === 0) return false;
+    if(section.custom === 'branch-grid'){
+      return BRANCHES.every(b => state.branches[b].cleared);
+    }
+    return steps.every(s => isStepDone(s.id));
+  }
+  function sectionProgress(section){
+    if(section.custom === 'branch-grid'){
+      const done = BRANCHES.filter(b=>state.branches[b].cleared).length;
+      return {done, total:47};
+    }
+    const steps = sectionSteps(section);
+    const done = steps.filter(s=>isStepDone(s.id)).length;
+    return {done, total:steps.length};
+  }
+  function sideProgress(side){
+    let done=0, total=0;
+    side.sections.forEach(sec=>{
+      const p = sectionProgress(sec);
+      done += p.done; total += p.total;
+    });
+    return {done, total};
+  }
+  function overallProgress(){
+    let done=0, total=0;
+    SIDES.forEach(side=>{
+      const p = sideProgress(side);
+      done+=p.done; total+=p.total;
+    });
+    return {done, total};
+  }
+
+  function highlightCode(str){
+    let s = str
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    s = s.replace(/\b(SELECT|FROM|WHERE|AND|OR|IN|GROUP BY|ORDER BY|NVL|SUM)\b/g, '<span class="kw">$1</span>');
+    s = s.replace(/('[^']*')/g, '<span class="str">$1</span>');
+    return s;
+  }
+
+  // ============================================================
+  //  RENDER
+  // ============================================================
+  const tabsEl = document.getElementById('tabs');
+  const mainEl = document.getElementById('main');
+
+  function renderTabs(){
+    tabsEl.innerHTML = SIDES.map((side, i)=>{
+      const p = sideProgress(side);
+      const pct = p.total ? Math.round(p.done/p.total*100) : 0;
+      const active = uiState.activeTab === i;
+      return `<button class="tab${active?' active':''}" data-tab="${i}">
+        <span class="tab-eyebrow">${side.eyebrow}</span>
+        <span class="tab-title">${side.title}</span>
+        <span class="tab-bar"><span class="tab-bar-fill${pct===100?' complete':''}" style="width:${pct}%"></span></span>
+      </button>`;
+    }).join('');
+  }
+
+  tabsEl.addEventListener('click', function(e){
+    const btn = e.target.closest('.tab');
+    if(!btn) return;
+    const tabIndex = parseInt(btn.dataset.tab,10);
+    uiState.activeTab = tabIndex;
+    localStorage.setItem('eoc-activeTab', tabIndex);
+    render();
+    window.scrollTo({top:0, behavior:'smooth'});
+  });
+
+  function renderOverall(){
+    const p = overallProgress();
+    const pct = p.total ? Math.round(p.done/p.total*100) : 0;
+    document.getElementById('overall-fill').style.width = pct+'%';
+    document.getElementById('overall-label').textContent = pct+'% · '+p.done+'/'+p.total;
+  }
+
+  function stepRow(step){
+    const done = isStepDone(step.id);
+    let extra = '';
+    if(step.code){
+      extra += `<div class="codeblock">${highlightCode(step.code)}</div>`;
+    }
+    if(step.note){
+      extra += `<div class="step-note">${step.note}</div>`;
+    }
+    return `<div class="step${done?' done':''}">
+      <div class="step-check" data-step="${step.id}">${CHECK_SVG}</div>
+      <div class="step-text">
+        <div class="step-label" data-step-label="${step.id}">${step.label}</div>
+        ${extra}
+      </div>
+    </div>`;
+  }
+
+  function branchGridHTML(){
+    const called = BRANCHES.filter(b=>state.branches[b].called && !state.branches[b].cleared).length;
+    const cleared = BRANCHES.filter(b=>state.branches[b].cleared).length;
+    let tiles = BRANCHES.map(b=>{
+      const st = state.branches[b];
+      let cls = 'branch-tile';
+      let label = 'Not called';
+      if(st.cleared){ cls+=' cleared'; label='Cleared'; }
+      else if(st.called){ cls+=' called'; label='Called'; }
+      const twin = TWIN_MAP[b] ? `<span class="twin-dot" title="Twin of ${TWIN_MAP[b]}"></span>` : '';
+      return `<button class="${cls}" data-branch="${b}">
+        ${twin}
+        <div class="branch-code">${b}</div>
+        <div class="branch-state">${label}</div>
+      </button>`;
+    }).join('');
+
+    return `
+      <div class="branch-toolbar">
+        <div class="branch-stats"><b>${cleared}</b>/47 cleared &nbsp;·&nbsp; <b>${called}</b> called, awaiting clearance</div>
+      </div>
+      <div class="branch-grid">${tiles}</div>
+    `;
+  }
+
+  function sectionHTML(side, section, forceOpen){
+    const done = sectionDone(section);
+    const prog = sectionProgress(section);
+    const sectionKey = side.key + '-' + section.id;
+    const isOpen = forceOpen || uiState.openSections[sectionKey];
+    
+    let body = '';
+    if(section.custom === 'branch-grid'){
+      body = branchGridHTML();
+    } else {
+      body = section.steps.map(stepRow).join('');
+    }
+    const warn = section.warn ? `<div class="warn-box"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg><span>${section.warn}</span></div>` : '';
+
+    return `<div class="section${done?' done':''}${isOpen?' open':''}" data-section="${section.id}">
+      <div class="section-head">
+        <div class="section-check" data-mark-section="${section.id}" title="Mark all steps in this section done">${CHECK_SVG}</div>
+        <div class="section-title-wrap" data-toggle="${section.id}">
+          <p class="section-title">${section.title}</p>
+          <div class="section-meta">${section.meta || ''} — ${prog.done}/${prog.total}</div>
+        </div>
+        ${section.warn ? '<span class="section-warn-badge">READ</span>' : ''}
+        <span class="section-caret" data-toggle="${section.id}">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 6l6 6-6 6"/></svg>
+        </span>
+      </div>
+      <div class="section-body"><div class="section-body-inner">${warn}${body}</div></div>
+    </div>`;
+  }
+
+  function renderSide(){
+    const side = SIDES[uiState.activeTab];
+    const html = `
+      <div class="side-panel active">
+        <div class="side-head">
+          <h1>${side.title}</h1>
+          <p>${side.blurb}</p>
+          <div style="font-size:12px;color:var(--text-faint);margin-top:6px;">
+            👤 ${userId} · All changes sync across the team
+          </div>
+        </div>
+        ${side.sections.map(sec => sectionHTML(side, sec)).join('')}
+        <div class="side-nav">
+          <button class="nav-btn" id="prev-side" ${uiState.activeTab===0?'disabled':''}>&larr; Previous</button>
+          <button class="nav-btn primary" id="next-side" ${uiState.activeTab===SIDES.length-1?'disabled':''}>Next &rarr;</button>
+        </div>
+      </div>
+    `;
+    mainEl.innerHTML = html;
+  }
+
+  function markSectionDone(sectionId){
+    const side = SIDES[uiState.activeTab];
+    const sec = side.sections.find(s=>s.id===sectionId);
+    if(!sec) return;
+    const nowDone = !sectionDone(sec);
+    if(sec.custom === 'branch-grid'){
+      BRANCHES.forEach(b=>{
+        state.branches[b].called = nowDone;
+        state.branches[b].cleared = nowDone;
+      });
+    } else {
+      sec.steps.forEach(s=>{ state.steps[s.id] = nowDone; });
+    }
+    saveState();
+  }
+
+  // ============================================================
+  //  EVENT DELEGATION
+  // ============================================================
+  mainEl.addEventListener('click', function(e){
+    const branchEl = e.target.closest('[data-branch]');
+    if(branchEl){
+      openBranchModal(branchEl.dataset.branch);
+      return;
+    }
+    const markSectionEl = e.target.closest('[data-mark-section]');
+    if(markSectionEl){
+      markSectionDone(markSectionEl.dataset.markSection);
+      renderSideKeepScroll();
+      return;
+    }
+    const stepEl = e.target.closest('[data-step]');
+    if(stepEl){
+      toggleStep(stepEl.dataset.step);
+      renderSideKeepScroll();
+      return;
+    }
+    const stepLabelEl = e.target.closest('[data-step-label]');
+    if(stepLabelEl){
+      toggleStep(stepLabelEl.dataset.stepLabel);
+      renderSideKeepScroll();
+      return;
+    }
+    const toggleEl = e.target.closest('[data-toggle]');
+    if(toggleEl){
+      const id = toggleEl.dataset.toggle;
+      const side = SIDES[uiState.activeTab];
+      const sec = side.sections.find(s=>s.id===id);
+      if(sec){ 
+        const sectionKey = side.key + '-' + sec.id;
+        uiState.openSections[sectionKey] = !uiState.openSections[sectionKey];
+        localStorage.setItem('eoc-openSections', JSON.stringify(uiState.openSections));
+        renderSideKeepScroll(); 
+      }
+      return;
+    }
+    const prevBtn = e.target.closest('#prev-side');
+    if(prevBtn){
+      uiState.activeTab = Math.max(0, uiState.activeTab-1);
+      localStorage.setItem('eoc-activeTab', uiState.activeTab);
+      render();
+      window.scrollTo({top:0, behavior:'smooth'});
+      return;
+    }
+    const nextBtn = e.target.closest('#next-side');
+    if(nextBtn){
+      uiState.activeTab = Math.min(SIDES.length-1, uiState.activeTab+1);
+      localStorage.setItem('eoc-activeTab', uiState.activeTab);
+      render();
+      window.scrollTo({top:0, behavior:'smooth'});
+      return;
+    }
+  });
+
+  function renderSideKeepScroll(){
+    const y = window.scrollY;
+    renderSide();
+    renderTabs();
+    renderOverall();
+    window.scrollTo({top:y});
+  }
+
+  // ============================================================
+  //  BRANCH MODAL
+  // ============================================================
+  const backdrop = document.getElementById('modal-backdrop');
+  const modalCode = document.getElementById('modal-code');
+  const modalTwin = document.getElementById('modal-twin');
+  const modalCalled = document.getElementById('modal-called');
+  const modalCleared = document.getElementById('modal-cleared');
+  const modalUser = document.getElementById('modal-user');
+  let currentBranch = null;
+
+  function openBranchModal(code){
+    currentBranch = code;
+    modalCode.textContent = code;
+    modalTwin.textContent = TWIN_MAP[code] ? `Twin branch: ${TWIN_MAP[code]}` : '';
+    modalUser.textContent = '👤 ' + userId;
+    modalCalled.checked = state.branches[code].called;
+    modalCleared.checked = state.branches[code].cleared;
+    backdrop.classList.add('open');
+  }
+  function closeBranchModal(){
+    backdrop.classList.remove('open');
+    saveState();
+    renderSideKeepScroll();
+  }
+
+  modalCalled.addEventListener('change', ()=>{
+    if(currentBranch) {
+      state.branches[currentBranch].called = modalCalled.checked;
+      if(!modalCalled.checked){ 
+        modalCleared.checked=false; 
+        state.branches[currentBranch].cleared=false; 
+      }
+      saveState();
+    }
+  });
+
+  modalCleared.addEventListener('change', ()=>{
+    if(currentBranch) {
+      if(modalCleared.checked){ 
+        modalCalled.checked = true; 
+        state.branches[currentBranch].called = true; 
+      }
+      state.branches[currentBranch].cleared = modalCleared.checked;
+      saveState();
+    }
+  });
+
+  document.getElementById('modal-close').addEventListener('click', closeBranchModal);
+  backdrop.addEventListener('click', (e)=>{ if(e.target===backdrop) closeBranchModal(); });
+
+  // ============================================================
+  //  RESET
+  // ============================================================
+  document.getElementById('reset-btn').addEventListener('click', ()=>{
+    if(!confirm('Reset ALL progress for everyone? This cannot be undone.')) return;
+    state = getDefaultState();
+    saveState();
+    render();
+    window.scrollTo({top:0});
+  });
+
+  // ============================================================
+  //  DATE
+  // ============================================================
+  (function setDate(){
+    const d = new Date();
+    const opts = { weekday:'short', year:'numeric', month:'short', day:'numeric' };
+    document.getElementById('today-pill').textContent = d.toLocaleDateString('en-GB', opts);
+  })();
+
+  // ============================================================
+  //  INIT
+  // ============================================================
+  function render(){
+    renderTabs();
+    renderSide();
+    renderOverall();
+  }
+  
+  // Load initial state
+  stateRef.once('value', snapshot => {
+    const data = snapshot.val();
+    if(data) {
+      state.steps = data.steps || {};
+      state.branches = data.branches || {};
+      BRANCHES.forEach(b=>{
+        if(!state.branches[b]) state.branches[b] = {called:false, cleared:false};
+      });
+      render();
+    }
+  });
+
+  console.log('🚀 EOC Console with Shared Progress ready!');
+  console.log(`👤 User: ${userId}`);
+  console.log('📡 Data shared at:', stateRef.toString());
+  console.log('📌 UI is independent per user (tabs, open sections)');
+
+})();
+</script>
+</body>
+</html>
